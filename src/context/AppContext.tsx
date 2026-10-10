@@ -16,6 +16,7 @@ import {
   GiftItem,
   Message,
   ShopPackage,
+  TypingUser,
   User,
   UserStatus,
   VoiceChannelState,
@@ -89,6 +90,18 @@ interface AppContextType {
   toggleReaction: (targetId: string, messageId: string, emoji: string) => void;
   pinnedUserIds: string[];
   togglePinChat: (userId: string) => void;
+  typingUsers: Record<string, TypingUser[]>;
+  setUserTyping: (targetId: string, isTyping: boolean) => void;
+  simulateParticipantTyping: (targetId: string, durationMs?: number) => void;
+  blockedUserIds: string[];
+  blockUser: (userId: string) => void;
+  unblockUser: (userId: string) => void;
+  isUserBlocked: (userId: string) => boolean;
+  closedDmUserIds: string[];
+  closeDm: (userId: string) => void;
+  acceptCoinGift: (messageIdOrTarget: string, coinGiftOrMsgId?: any) => void;
+  setCoinMarketModalOpen: (open: boolean) => void;
+  openUserContextMenu: (user: User, e?: React.MouseEvent) => void;
 
   // Voice Rooms
   voiceState: VoiceChannelState;
@@ -1019,6 +1032,109 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
   };
 
+  // User Blocking & Closed DMs
+  const [blockedUserIds, setBlockedUserIds] = useState<string[]>(() => {
+    const saved = localStorage.getItem('kurdcord_blocked');
+    try {
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const [closedDmUserIds, setClosedDmUserIds] = useState<string[]>(() => {
+    const saved = localStorage.getItem('kurdcord_closed_dms');
+    try {
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  useEffect(() => {
+    localStorage.setItem('kurdcord_blocked', JSON.stringify(blockedUserIds));
+  }, [blockedUserIds]);
+
+  useEffect(() => {
+    localStorage.setItem('kurdcord_closed_dms', JSON.stringify(closedDmUserIds));
+  }, [closedDmUserIds]);
+
+  const blockUser = (userId: string) => {
+    setBlockedUserIds((prev) => (prev.includes(userId) ? prev : [...prev, userId]));
+  };
+
+  const unblockUser = (userId: string) => {
+    setBlockedUserIds((prev) => prev.filter((id) => id !== userId));
+  };
+
+  const isUserBlocked = (userId: string) => blockedUserIds.includes(userId);
+
+  const closeDm = (userId: string) => {
+    setClosedDmUserIds((prev) => (prev.includes(userId) ? prev : [...prev, userId]));
+    if (activeDmUser?.id === userId) {
+      setActiveDmUser(null);
+    }
+  };
+
+  const acceptCoinGift = (messageIdOrTarget: string, coinGiftOrMsgId?: any) => {
+    let targetChatId: string | undefined;
+    let messageId: string;
+
+    if (typeof coinGiftOrMsgId === 'string') {
+      targetChatId = messageIdOrTarget;
+      messageId = coinGiftOrMsgId;
+    } else {
+      messageId = messageIdOrTarget;
+    }
+
+    let giftAmount = typeof coinGiftOrMsgId === 'object' && coinGiftOrMsgId?.amount ? coinGiftOrMsgId.amount : 0;
+    let senderName = typeof coinGiftOrMsgId === 'object' && coinGiftOrMsgId?.senderName ? coinGiftOrMsgId.senderName : '';
+
+    setMessages((prev) => {
+      const nextState: Record<string, Message[]> = {};
+      Object.keys(prev).forEach((chatId) => {
+        if (targetChatId && chatId !== targetChatId) {
+          nextState[chatId] = prev[chatId];
+          return;
+        }
+        nextState[chatId] = prev[chatId].map((msg) => {
+          if (msg.id === messageId && msg.coinGift) {
+            if (!giftAmount) giftAmount = msg.coinGift.amount;
+            if (!senderName) senderName = msg.coinGift.senderName;
+            return {
+              ...msg,
+              coinGift: {
+                ...msg.coinGift,
+                status: 'accepted' as const,
+                acceptedAt: Date.now(),
+                isClaimed: true,
+                claimedAt: Date.now(),
+              },
+            };
+          }
+          return msg;
+        });
+      });
+      return nextState;
+    });
+
+    if (giftAmount > 0) {
+      addCoins(giftAmount, `${giftAmount.toLocaleString()} Coins accepted from ${senderName || 'friend'}`);
+    }
+  };
+
+  const setCoinMarketModalOpen = (_open: boolean) => {
+    setShopModalOpen(true);
+  };
+
+  const openUserContextMenu = (user: User, _e?: React.MouseEvent) => {
+    if (user.id === currentUser.id) {
+      setProfileModalOpen(true);
+    } else {
+      selectDm(user);
+    }
+  };
+
   // 5. Chat & Messages
   const [messages, setMessages] = useState<Record<string, Message[]>>(() => {
     const saved = localStorage.getItem('kurdcord_msgs');
@@ -1035,6 +1151,110 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useEffect(() => {
     localStorage.setItem('kurdcord_msgs', JSON.stringify(messages));
   }, [messages]);
+
+  // Real-Time Typing Indicators State
+  const [typingUsers, setTypingUsers] = useState<Record<string, TypingUser[]>>({});
+  const typingTimersRef = useRef<Record<string, number>>({});
+
+  const setParticipantTypingState = (
+    targetId: string,
+    user: TypingUser,
+    isTyping: boolean
+  ) => {
+    setTypingUsers((prev) => {
+      const currentList = prev[targetId] || [];
+      if (isTyping) {
+        if (currentList.some((u) => u.userId === user.userId)) return prev;
+        return {
+          ...prev,
+          [targetId]: [...currentList, user],
+        };
+      } else {
+        const filtered = currentList.filter((u) => u.userId !== user.userId);
+        return {
+          ...prev,
+          [targetId]: filtered,
+        };
+      }
+    });
+  };
+
+  const setUserTyping = (targetId: string, isTyping: boolean) => {
+    if (!targetId) return;
+
+    if (isTyping) {
+      // In a DM, when current user types, occasionally the participant notices and starts typing back!
+      if (!targetId.startsWith('ch_')) {
+        const contact = COMMUNITY_USERS.find((u) => u.id === targetId);
+        if (contact) {
+          const timerKey = `peer_type_${targetId}`;
+          if (!typingTimersRef.current[timerKey]) {
+            typingTimersRef.current[timerKey] = window.setTimeout(() => {
+              setParticipantTypingState(
+                targetId,
+                {
+                  userId: contact.id,
+                  username: contact.username,
+                  displayName: contact.displayName,
+                  avatarUrl: contact.avatarUrl,
+                },
+                true
+              );
+
+              window.setTimeout(() => {
+                setParticipantTypingState(
+                  targetId,
+                  {
+                    userId: contact.id,
+                    username: contact.username,
+                    displayName: contact.displayName,
+                    avatarUrl: contact.avatarUrl,
+                  },
+                  false
+                );
+                delete typingTimersRef.current[timerKey];
+              }, 2800);
+            }, 700);
+          }
+        }
+      }
+    }
+  };
+
+  const simulateParticipantTyping = (targetId: string, durationMs = 3500) => {
+    let participant: User | undefined;
+    if (!targetId.startsWith('ch_')) {
+      participant = COMMUNITY_USERS.find((u) => u.id === targetId);
+    } else {
+      participant = COMMUNITY_USERS[Math.floor(Math.random() * COMMUNITY_USERS.length)];
+    }
+
+    if (!participant) return;
+
+    setParticipantTypingState(
+      targetId,
+      {
+        userId: participant.id,
+        username: participant.username,
+        displayName: participant.displayName,
+        avatarUrl: participant.avatarUrl,
+      },
+      true
+    );
+
+    window.setTimeout(() => {
+      setParticipantTypingState(
+        targetId,
+        {
+          userId: participant!.id,
+          username: participant!.username,
+          displayName: participant!.displayName,
+          avatarUrl: participant!.avatarUrl,
+        },
+        false
+      );
+    }, durationMs);
+  };
 
   const sendMessage = (
     targetId: string,
@@ -1067,22 +1287,48 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       [targetId]: [...(prev[targetId] || []), newMsg],
     }));
 
-    // If it's a DM to a simulated contact, schedule a realistic reply
+    // If it's a DM to a simulated contact, schedule realistic typing then reply
     if (!targetId.startsWith('ch_')) {
       const contact = COMMUNITY_USERS.find((u) => u.id === targetId);
       if (contact) {
+        // Start typing after 500ms
         setTimeout(() => {
+          setParticipantTypingState(
+            targetId,
+            {
+              userId: contact.id,
+              username: contact.username,
+              displayName: contact.displayName,
+              avatarUrl: contact.avatarUrl,
+            },
+            true
+          );
+        }, 500);
+
+        setTimeout(() => {
+          // Stop typing right as message lands
+          setParticipantTypingState(
+            targetId,
+            {
+              userId: contact.id,
+              username: contact.username,
+              displayName: contact.displayName,
+              avatarUrl: contact.avatarUrl,
+            },
+            false
+          );
+
           const repliesKu = [
-            'دەستت خۆش بێت ژیار گیان! ئەمە تایبەتمەندییەکی زۆر بەهێزە 🔥',
-            'زۆر نایابە! کەی دەچینە ژووری دەنگ کەمێک پێبکەنین و یاری بکەین؟ 🎮',
-            'نامەکەت گەیشت، کوالێتی ئەم سیستمە چاتی دیسکۆرد زۆر خێرایە 🚀',
+            'دەستت خۆش بێت گیان! نامەکەت بە جوانی گەیشت 🔥',
+            'زۆر نایابە! خەریکم تایبەتمەندییە نوێیەکان تاقی دەکەمەوە 🚀',
             'سڵاو! دەتوانین پەیوەندی دەنگ یان کامێرەش بکەین ئێستا ئەگەر ئامادەبیت 🎧',
+            'کەی دەچینە ژووری دەنگ کەمێک گفتوگۆ بکەین؟ 🎮',
           ];
           const repliesEn = [
-            'Thanks a lot Zhyar! This Discord platform is looking fire 🔥',
-            'Awesome! When are we jumping into the voice room? 🎮',
-            'Got your message! The speed and design here are top tier 🚀',
+            'Thanks for the message! KurdCord is feeling super smooth 🔥',
+            'Awesome! I was just checking the new updates 🚀',
             'Hey there! Feel free to start a voice or video call whenever you want 🎧',
+            'Got it! When are we jumping into the voice lounge? 🎮',
           ];
           const randomReply =
             language === 'ku'
@@ -1116,7 +1362,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             timestamp: Date.now(),
             onClick: () => selectDm(contact),
           });
-        }, 2200);
+        }, 2600);
       }
     }
   };
@@ -1533,6 +1779,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         toggleReaction,
         pinnedUserIds,
         togglePinChat,
+        typingUsers,
+        setUserTyping,
+        simulateParticipantTyping,
+        blockedUserIds,
+        blockUser,
+        unblockUser,
+        isUserBlocked,
+        closedDmUserIds,
+        closeDm,
+        acceptCoinGift,
+        setCoinMarketModalOpen,
+        openUserContextMenu,
         voiceState,
         joinVoiceChannel,
         leaveVoiceChannel,

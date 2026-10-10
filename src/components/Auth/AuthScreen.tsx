@@ -22,7 +22,6 @@ import {
   Users,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
-import { COMMUNITY_USERS, INITIAL_OWNER } from '../../data/mockData';
 
 const PRESET_AVATARS = [
   'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=400&q=80',
@@ -157,19 +156,6 @@ export const AuthScreen: React.FC = () => {
         setErrorMsg(res.message);
       }
     }, 500);
-  };
-
-  const handleQuickLogin = (identifier: string) => {
-    login(identifier);
-    try {
-      confetti({
-        particleCount: 60,
-        spread: 60,
-        origin: { y: 0.6 },
-      });
-    } catch {
-      // ignore
-    }
   };
 
   return (
@@ -545,50 +531,6 @@ export const AuthScreen: React.FC = () => {
                   {language === 'ku' ? 'چوونەژوورەوەی خێرا بە Apple ID' : 'Sign in with Apple ID'}
                 </span>
               </button>
-
-              {/* Quick Demo Accounts Selection */}
-              <div className="pt-2">
-                <div className="text-[11px] text-[#8b92a5] font-semibold mb-2 text-start">
-                  {language === 'ku' ? 'یان هەڵبژاردنی یەکێک لە ئەکاونتە ئامادەکراوەکان:' : 'Or test with a pre-configured account:'}
-                </div>
-                <div className="grid grid-cols-3 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => handleQuickLogin(INITIAL_OWNER.username)}
-                    className="p-2 rounded-xl bg-[#161925] hover:bg-[#202538] border border-[#23293a] text-center flex flex-col items-center gap-1 group transition-all"
-                  >
-                    <div className="w-8 h-8 rounded-full overflow-hidden border border-amber-500/40">
-                      <img src={INITIAL_OWNER.avatarUrl} alt="Owner" className="w-full h-full object-cover" />
-                    </div>
-                    <span className="text-[10px] font-bold text-amber-300 truncate w-full">Zhyar 👑</span>
-                    <span className="text-[9px] text-[#6b738a]">Owner</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => handleQuickLogin(COMMUNITY_USERS[0].username)}
-                    className="p-2 rounded-xl bg-[#161925] hover:bg-[#202538] border border-[#23293a] text-center flex flex-col items-center gap-1 group transition-all"
-                  >
-                    <div className="w-8 h-8 rounded-full overflow-hidden border border-blue-500/40">
-                      <img src={COMMUNITY_USERS[0].avatarUrl} alt="Alan" className="w-full h-full object-cover" />
-                    </div>
-                    <span className="text-[10px] font-bold text-white truncate w-full">Alan</span>
-                    <span className="text-[9px] text-[#6b738a]">Gamer</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => handleQuickLogin(COMMUNITY_USERS[1].username)}
-                    className="p-2 rounded-xl bg-[#161925] hover:bg-[#202538] border border-[#23293a] text-center flex flex-col items-center gap-1 group transition-all"
-                  >
-                    <div className="w-8 h-8 rounded-full overflow-hidden border border-pink-500/40">
-                      <img src={COMMUNITY_USERS[1].avatarUrl} alt="Sara" className="w-full h-full object-cover" />
-                    </div>
-                    <span className="text-[10px] font-bold text-white truncate w-full">Sara</span>
-                    <span className="text-[9px] text-[#6b738a]">Coder</span>
-                  </button>
-                </div>
-              </div>
             </div>
           )}
 

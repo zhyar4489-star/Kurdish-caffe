@@ -38,6 +38,7 @@ export const DirectMessagesSidebar: React.FC = () => {
     blockUser,
     unblockUser,
     openUserContextMenu,
+    typingUsers,
   } = useApp();
 
   const [search, setSearch] = useState('');
@@ -103,6 +104,7 @@ export const DirectMessagesSidebar: React.FC = () => {
     const userMsgs = messages[user.id] || [];
     const lastMsg = userMsgs[userMsgs.length - 1];
     const isBlocked = blockedUserIds.includes(user.id);
+    const isUserTyping = (typingUsers[user.id] || []).length > 0;
 
     return (
       <div
@@ -168,9 +170,22 @@ export const DirectMessagesSidebar: React.FC = () => {
               )}
             </div>
 
-            <p className="text-[11px] text-[#6d758d] truncate mt-0.5">
-              {lastMsg ? lastMsg.text : `@${user.username}`}
-            </p>
+            {isUserTyping ? (
+              <div className="flex items-center gap-1.5 text-[11px] text-cyan-400 font-semibold mt-0.5 truncate">
+                <span className="flex items-center gap-0.5 shrink-0">
+                  <span className="w-1 h-1 rounded-full bg-cyan-400 animate-bounce" style={{ animationDelay: '0ms' }} />
+                  <span className="w-1 h-1 rounded-full bg-cyan-400 animate-bounce" style={{ animationDelay: '150ms' }} />
+                  <span className="w-1 h-1 rounded-full bg-cyan-400 animate-bounce" style={{ animationDelay: '300ms' }} />
+                </span>
+                <span className="truncate">
+                  {language === 'ku' ? 'خەریکی نووسینە...' : 'is typing...'}
+                </span>
+              </div>
+            ) : (
+              <p className="text-[11px] text-[#6d758d] truncate mt-0.5">
+                {lastMsg ? lastMsg.text : `@${user.username}`}
+              </p>
+            )}
           </div>
         </button>
 

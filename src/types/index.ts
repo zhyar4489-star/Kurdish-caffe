@@ -54,6 +54,18 @@ export interface Message {
     icon: string;
     coinValue: number;
   };
+  coinGift?: {
+    amount: number;
+    senderId: string;
+    senderName: string;
+    recipientId?: string;
+    status?: 'pending' | 'accepted' | 'expired';
+    expiresAt?: number;
+    acceptedAt?: number;
+    isOwnerFreeGift?: boolean;
+    isClaimed?: boolean;
+    claimedAt?: number;
+  };
   reactions?: MessageReaction[];
 }
 
@@ -117,6 +129,13 @@ export interface PresetGiftCard {
   valueUSD: number;
   equivalentCoins: number;
   label: string;
+}
+
+export interface TypingUser {
+  userId: string;
+  username: string;
+  displayName: string;
+  avatarUrl: string;
 }
 
 export interface GiftItem {

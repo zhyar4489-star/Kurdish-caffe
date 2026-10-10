@@ -23,7 +23,7 @@ import {
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { COMMUNITY_USERS, GIFT_ITEMS } from '../../data/mockData';
-import { GiftItem, User } from '../../types';
+import { GiftItem, TypingUser, User } from '../../types';
 import { UserAvatar } from '../Common/UserAvatar';
 
 const QUICK_REACTION_EMOJIS = ['❤️', '👍', '🔥', '😂', '🎉', '👑', '💎', '✨'];
@@ -33,6 +33,7 @@ export const ChatArea: React.FC = () => {
     activeView,
     currentChannelId,
     channels,
+    friends,
     activeDmUser,
     messages,
     sendMessage,
@@ -50,6 +51,9 @@ export const ChatArea: React.FC = () => {
     isUserBlocked,
     unblockUser,
     openUserContextMenu,
+    typingUsers,
+    setUserTyping,
+    simulateParticipantTyping,
   } = useApp();
 
   const [inputText, setInputText] = useState('');
@@ -61,18 +65,62 @@ export const ChatArea: React.FC = () => {
   const recordingTimerRef = useRef<number | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const userTypingTimeoutRef = useRef<number | null>(null);
 
   const activeChannel = channels.find((c) => c.id === currentChannelId);
   const targetId = activeView === 'channels' ? currentChannelId : activeDmUser?.id || '';
   const currentMessages = targetId ? messages[targetId] || [] : [];
 
+  // Filter typing users for this conversation (excluding local user)
+  const currentTypingUsers = (targetId ? typingUsers[targetId] || [] : []).filter(
+    (u) => u.userId !== currentUser.id
+  );
+
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [currentMessages.length]);
+  }, [currentMessages.length, currentTypingUsers.length]);
+
+  // Clean up typing timeout when leaving target conversation
+  useEffect(() => {
+    return () => {
+      if (userTypingTimeoutRef.current) {
+        window.clearTimeout(userTypingTimeoutRef.current);
+      }
+      if (targetId) {
+        setUserTyping(targetId, false);
+      }
+    };
+  }, [targetId]);
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value;
+    setInputText(val);
+
+    if (val.trim()) {
+      setUserTyping(targetId, true);
+
+      if (userTypingTimeoutRef.current) {
+        window.clearTimeout(userTypingTimeoutRef.current);
+      }
+      userTypingTimeoutRef.current = window.setTimeout(() => {
+        setUserTyping(targetId, false);
+      }, 2000);
+    } else {
+      if (userTypingTimeoutRef.current) {
+        window.clearTimeout(userTypingTimeoutRef.current);
+      }
+      setUserTyping(targetId, false);
+    }
+  };
 
   const handleSend = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!inputText.trim() && !selectedImage) return;
+
+    if (userTypingTimeoutRef.current) {
+      window.clearTimeout(userTypingTimeoutRef.current);
+    }
+    setUserTyping(targetId, false);
 
     sendMessage(
       targetId,
@@ -82,6 +130,38 @@ export const ChatArea: React.FC = () => {
 
     setInputText('');
     setSelectedImage(null);
+  };
+
+  const renderTypingText = (users: TypingUser[]) => {
+    if (users.length === 1) {
+      return language === 'ku' ? (
+        <span>
+          <strong className="text-white font-bold">{users[0].displayName}</strong> خەریکی نووسینە...
+        </span>
+      ) : (
+        <span>
+          <strong className="text-white font-bold">{users[0].displayName}</strong> is typing...
+        </span>
+      );
+    }
+    if (users.length === 2) {
+      return language === 'ku' ? (
+        <span>
+          <strong className="text-white font-bold">{users[0].displayName}</strong> و{' '}
+          <strong className="text-white font-bold">{users[1].displayName}</strong> دەنووسن...
+        </span>
+      ) : (
+        <span>
+          <strong className="text-white font-bold">{users[0].displayName}</strong> and{' '}
+          <strong className="text-white font-bold">{users[1].displayName}</strong> are typing...
+        </span>
+      );
+    }
+    return language === 'ku' ? (
+      <span>چەند کەسێک خەریکی نووسینن...</span>
+    ) : (
+      <span>Several people are typing...</span>
+    );
   };
 
   const handleSendGift = (gift: GiftItem) => {
@@ -242,11 +322,35 @@ export const ChatArea: React.FC = () => {
               >
                 <MoreVertical className="w-3.5 h-3.5" />
               </button>
+
+              {/* Real-time Typing Simulation trigger */}
+              <button
+                type="button"
+                onClick={() => simulateParticipantTyping(targetId)}
+                className="p-2 rounded-xl bg-[#151926] hover:bg-[#1f2538] border border-[#252e42] text-[#8b92a5] hover:text-cyan-400 transition-colors"
+                title={language === 'ku' ? 'تاقیکردنەوەی نووسینی ڕاستەوخۆ (Test Typing Indicator)' : 'Test participant typing indicator'}
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+              </button>
             </div>
           </div>
         ) : (
-          <div className="text-white font-bold text-sm">
-            {activeChannel?.name || 'چاتی گشتی'}
+          <div className="flex items-center justify-between w-full">
+            <div className="text-white font-bold text-sm flex items-center gap-2">
+              <span>{activeChannel?.name || 'چاتی گشتی'}</span>
+              <span className="text-[10px] text-cyan-400 bg-cyan-500/10 px-2 py-0.5 rounded-full border border-cyan-500/20">
+                #text
+              </span>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => simulateParticipantTyping(targetId)}
+              className="p-2 rounded-xl bg-[#151926] hover:bg-[#1f2538] border border-[#252e42] text-[#8b92a5] hover:text-cyan-400 transition-colors"
+              title={language === 'ku' ? 'تاقیکردنەوەی نووسینی ڕاستەوخۆ' : 'Simulate typing in channel'}
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+            </button>
           </div>
         )}
       </header>
@@ -411,7 +515,7 @@ export const ChatArea: React.FC = () => {
                                 <CheckCircle2 className="w-3.5 h-3.5" />
                                 <span>{language === 'ku' ? 'وەرگیراوە ✅' : 'Accepted ✅'}</span>
                               </span>
-                            ) : Date.now() > msg.coinGift.expiresAt || msg.coinGift.status === 'expired' ? (
+                            ) : Date.now() > (msg.coinGift.expiresAt || msg.timestamp + 86400000) || msg.coinGift.status === 'expired' ? (
                               <span className="text-rose-400 font-bold text-[11px]">
                                 {language === 'ku' ? '⌛ بەسەرچوو (Expired)' : '⌛ Expired'}
                               </span>
@@ -419,7 +523,7 @@ export const ChatArea: React.FC = () => {
                               <span className="text-amber-400 font-bold text-[11px]">
                                 {Math.max(
                                   1,
-                                  Math.round((msg.coinGift.expiresAt - Date.now()) / (1000 * 60 * 60))
+                                  Math.round(((msg.coinGift.expiresAt || msg.timestamp + 86400000) - Date.now()) / (1000 * 60 * 60))
                                 )}{' '}
                                 {language === 'ku' ? 'کاتژمێر ماوە (24h)' : 'hours remaining'}
                               </span>
@@ -427,7 +531,7 @@ export const ChatArea: React.FC = () => {
                           </div>
 
                           {/* Action Button: ACCEPT (ئەکسێپت) or Claimed Status */}
-                          {msg.coinGift.status === 'pending' && Date.now() <= msg.coinGift.expiresAt ? (
+                          {msg.coinGift.status === 'pending' && Date.now() <= (msg.coinGift.expiresAt || msg.timestamp + 86400000) ? (
                             currentUser.id === msg.coinGift.recipientId || !isMe ? (
                               <button
                                 type="button"
@@ -562,6 +666,42 @@ export const ChatArea: React.FC = () => {
             );
           })
         )}
+        {/* Real-time Typing Bubble inside message stream */}
+        {currentTypingUsers.length > 0 && (
+          <div className="flex items-center gap-3 py-2 px-2 animate-in fade-in slide-in-from-bottom-2 duration-150">
+            <div className="flex -space-x-2 rtl:space-x-reverse overflow-hidden shrink-0">
+              {currentTypingUsers.slice(0, 3).map((u) => (
+                <img
+                  key={u.userId}
+                  src={u.avatarUrl}
+                  alt={u.displayName}
+                  className="w-7 h-7 rounded-full object-cover ring-2 ring-[#0a0c12] shadow-md"
+                />
+              ))}
+            </div>
+
+            <div className="bg-[#151926] border border-[#232b3f] px-3.5 py-2 rounded-2xl rounded-bl-sm rtl:rounded-bl-2xl rtl:rounded-br-sm flex items-center gap-2.5 shadow-lg">
+              <div className="flex items-center gap-1">
+                <span
+                  className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-bounce"
+                  style={{ animationDuration: '0.8s', animationDelay: '0ms' }}
+                />
+                <span
+                  className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-bounce"
+                  style={{ animationDuration: '0.8s', animationDelay: '150ms' }}
+                />
+                <span
+                  className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-bounce"
+                  style={{ animationDuration: '0.8s', animationDelay: '300ms' }}
+                />
+              </div>
+
+              <span className="text-xs text-[#8b92a5] ps-1">
+                {renderTypingText(currentTypingUsers)}
+              </span>
+            </div>
+          </div>
+        )}
         <div ref={messagesEndRef} />
       </div>
 
@@ -580,6 +720,34 @@ export const ChatArea: React.FC = () => {
           >
             {language === 'ku' ? 'لابردن' : 'Remove'}
           </button>
+        </div>
+      )}
+
+      {/* Real-Time User Typing Feedback Bar directly above Input Dock */}
+      {currentTypingUsers.length > 0 && (
+        <div className="px-6 py-1.5 bg-[#0e111a] border-t border-[#1a2133] flex items-center justify-between text-xs text-[#8b92a5] animate-in fade-in duration-150 select-none">
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1 bg-[#141824] px-2 py-0.5 rounded-full border border-[#20283c]">
+              <span
+                className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-bounce"
+                style={{ animationDuration: '0.8s', animationDelay: '0ms' }}
+              />
+              <span
+                className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-bounce"
+                style={{ animationDuration: '0.8s', animationDelay: '150ms' }}
+              />
+              <span
+                className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-bounce"
+                style={{ animationDuration: '0.8s', animationDelay: '300ms' }}
+              />
+            </div>
+            <span>{renderTypingText(currentTypingUsers)}</span>
+          </div>
+
+          <span className="text-[10px] text-cyan-400 font-mono flex items-center gap-1">
+            <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />
+            <span>{language === 'ku' ? 'چالاکە' : 'Live'}</span>
+          </span>
         </div>
       )}
 
@@ -623,7 +791,7 @@ export const ChatArea: React.FC = () => {
           <input
             type="text"
             value={inputText}
-            onChange={(e) => setInputText(e.target.value)}
+            onChange={handleInputChange}
             disabled={isRecordingVoice}
             placeholder={
               isRecordingVoice
