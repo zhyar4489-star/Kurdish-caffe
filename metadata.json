@@ -1,0 +1,10 @@
+{
+  "name": "KurdCord - Voice, Chat & Video",
+  "description": "Discord-style voice channels, private messaging, audio/video calling, profile customization with banners, and an in-app coin store with iTunes checkout and owner privileges.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone",
+    "display-capture"
+  ],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
